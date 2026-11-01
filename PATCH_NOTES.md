@@ -3,6 +3,19 @@
 Newest update on top. You can also read these in the game: press Esc, then **Patch notes**.
 Older builds used "art" tags: v0.24.4 was art24d and v0.24.3 was art24c. The sections below those are the older builds, kept under their art tags.
 
+## v0.26.32
+
+Cloud saves: link a phone with a QR code instead of typing the long sync code.
+
+### New
+- **QR code (Settings > Cloud):** when cloud saves are on, press **QR code** to show a code your phone can scan. It opens the phone web build and asks before linking. Only scan with your own devices - anyone with the code can load your burrow.
+- **Scan QR code** on a device that is not linked yet (and a **Scan** button when typing a code). Uses the camera when the browser allows it; otherwise it falls back to typing. Typed codes now chunk themselves with dashes as you type.
+- Opening a `#cloud=` link from your own QR asks **"Link this device to cloud save?"** and never links by itself.
+
+### Notes
+- The desktop app still uses typing (no camera there). The QR always points at the phone web build so a normal phone camera works.
+- On the public web build, the game no longer asks the missing LAN save server for `/save` and `/mp/status` (that was spamming the browser console).
+
 ## v0.26.31
 
 A quick fix for phones and tablets.

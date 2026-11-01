@@ -16,6 +16,8 @@
   /* v0.25.1: the desktop app runs its own relay (same protocol as serve.py) and keeps the world file in its user folder */
   const APP = (window.burrowNative && window.burrowNative.lan) ? window.burrowNative : null;
   const canHost = isHttp || !!APP;
+  /* v0.26.32: a public https page (GitHub Pages) has no serve.py behind it, so never ask it for /save or /mp/status */
+  const noServe = location.protocol === 'https:' && !/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
   const nowMs = () => performance.now();
 
   const NET = window.NET = {
@@ -1166,6 +1168,7 @@
   }
   async function diskInit() {
     if (!canHost) return;
+    if (noServe) { DISK.ready = true; return; }
     /* someone else (another tab or browser) is already hosting: the world file is theirs, so this tab leaves it alone */
     if (isHttp) try {
       const sr = await fetch('/mp/status', { cache: 'no-store' });
@@ -1807,7 +1810,7 @@
   function onlineDiskSave(data) {
     if (typeof data !== 'string') return;
     if (APP && !isHttp) { try { APP.save.writeSync(data); } catch (e) {} return; }
-    if (isHttp) try { fetch('/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: data, keepalive: data.length < 63000 }); } catch (e) {}
+    if (isHttp && !noServe) try { fetch('/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: data, keepalive: data.length < 63000 }); } catch (e) {}
   }
   NET.hostOnline = function (again) {
     if (DISK.peerOwned) { DISK.peerOwned = false; DISK.on = true; }
@@ -1912,6 +1915,7 @@
     if (APP && !isHttp) { await diskInit(); return; }
     if (!isHttp) return;
     await diskInit();
+    if (noServe) return;
     let st = null;
     try { const r = await fetch('/mp/status', { cache: 'no-store' }); if (r.ok) st = await r.json(); } catch (err) {}
     if (!st || typeof st.host !== 'boolean') return;          // not served by serve.py

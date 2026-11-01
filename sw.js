@@ -3,7 +3,7 @@
    /ws, /save and /mp/* are never cached. The cache name carries the game version, so a new version replaces it. */
 const VER = new URL(self.location.href).searchParams.get('v') || 'dev';
 const CACHE = 'burrow-' + VER;
-const FILES = ['./', 'index.html', 'style.css', 'touch.css', 'notes.js', 'game.js', 'net.js', 'touch.js', 'cloud.js', 'peerjs.min.js',
+const FILES = ['./', 'index.html', 'style.css', 'touch.css', 'notes.js', 'game.js', 'net.js', 'touch.js', 'cloud.js', 'peerjs.min.js', 'qrcode.min.js', 'jsqr.min.js',
   'favicon.png', 'burrow_icon_256.png', 'icon-192.png', 'icon-512.png', 'manifest.webmanifest'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES.map(f => new Request(f, { cache: 'reload' })))).then(() => self.skipWaiting()));

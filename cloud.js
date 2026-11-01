@@ -398,7 +398,32 @@
   handlePauseKey = function () { if (CL.modal || CL.dom) return; return _hpk.apply(this, arguments); };
 
   /* ---------- typed input (sync code, device name): a small HTML box over the game ---------- */
-  function domClose(v) { const d = CL.dom; if (!d) return; CL.dom = null; try { d.el.remove(); } catch (e) {} try { canvas.focus(); } catch (e) {} d.res(v); }
+  function domClose(v) {
+    const d = CL.dom; if (!d) return; CL.dom = null;
+    if (d.scan || CL._scan) try { v2632stopScan(CL._scan && CL._scan.stream); } catch (e) {}
+    try { d.el.remove(); } catch (e) {} try { canvas.focus(); } catch (e) {}
+    if (typeof d.res === 'function') d.res(v);
+  }
+  /* v0.26.32: chunk typed sync codes (uppercase, strip junk, dash every 5, keep the caret) */
+  function v2632fmtCode(raw) {
+    const c = String(raw || '').toUpperCase().replace(/[\s-]/g, '').replace(/O/g, '0').replace(/[IL]/g, '1').replace(/[^0-9A-HJKMNP-TV-Z]/g, '').slice(0, 26);
+    return c ? c.match(/.{1,5}/g).join('-') : '';
+  }
+  function v2632wireCodeInput(inp) {
+    let lock = false;
+    const apply = () => {
+      if (lock) return;
+      const old = inp.value, start = inp.selectionStart | 0;
+      const before = v2632fmtCode(old.slice(0, start)).length;
+      const next = v2632fmtCode(old);
+      if (next === old) return;
+      lock = true; inp.value = next;
+      try { inp.setSelectionRange(before, before); } catch (e) {}
+      lock = false;
+    };
+    inp.addEventListener('input', apply);
+    inp.addEventListener('blur', apply);
+  }
   function domAsk(o) {
     return new Promise(res => {
       if (CL.dom) domClose(null);
@@ -412,11 +437,18 @@
       inp.type = 'text'; inp.value = o.value || ''; inp.maxLength = o.max || 40; inp.placeholder = o.placeholder || '';
       inp.autocomplete = 'off'; inp.spellcheck = false; inp.setAttribute('autocapitalize', o.caps ? 'characters' : 'words'); inp.readOnly = !!o.readOnly;
       inp.style.cssText = 'width:100%;box-sizing:border-box;font:18px monospace;padding:8px;background:#241c14;color:#ffe080;border:1px solid #6a5030;letter-spacing:1px';
+      if (o.codeFmt) { inp.value = v2632fmtCode(inp.value); v2632wireCodeInput(inp); inp.maxLength = 31; }
       const err = document.createElement('div'); err.style.cssText = 'color:#e07070;font-size:14px;min-height:20px;margin-top:4px';
-      const row = document.createElement('div'); row.style.cssText = 'display:flex;gap:10px;justify-content:flex-end;margin-top:6px';
+      const row = document.createElement('div'); row.style.cssText = 'display:flex;gap:10px;justify-content:flex-end;margin-top:6px;flex-wrap:wrap';
       const mk = (t, hot) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = t;
         b.style.cssText = 'font:16px monospace;padding:8px 14px;min-height:44px;cursor:pointer;background:' + (hot ? '#3a2a14' : '#241c14') + ';color:' + (hot ? '#ffe080' : '#e8e0d0') + ';border:1px solid ' + (hot ? '#e6c34a' : '#6a5030'); return b; };
       const ok = mk(o.ok || 'OK', true), no = mk(o.cancel || 'Cancel');
+      /* v0.26.32: optional extra button (e.g. Scan) on the left of Cancel */
+      if (o.extra && o.extra.label) {
+        const ex = mk(o.extra.label, false);
+        ex.onclick = () => { const act = o.extra.act; domClose(null); if (act) try { act(); } catch (e) {} };
+        row.appendChild(ex);
+      }
       if (!o.noCancel) row.appendChild(no);
       row.appendChild(ok);
       el.append(h, p, inp, err, row);
@@ -471,7 +503,9 @@
     if (!c.code) {
       B.push({ x: 28, y: 92, w: 170, h: 18, label: 'Turn on cloud saves', hot: true, act: turnOn });
       B.push({ x: 28, y: 118, w: 170, h: 18, label: 'I have a code', act: enterCode });
-      B.push({ x: 28, y: 144, w: 170, h: 18, label: 'Device name', act: rename });
+      /* v0.26.32: scan a QR instead of typing the long code; Device name moves down */
+      B.push({ x: 28, y: 144, w: 170, h: 18, label: 'Scan QR code', act: v2632scan });
+      B.push({ x: 28, y: 170, w: 170, h: 18, label: 'Device name', act: rename });
       return B;
     }
     B.push({ x: 300, y: 70, w: 64, h: 16, label: CL.showCode ? 'Hide' : 'Show', act: () => { CL.showCode = !CL.showCode; } });
@@ -481,6 +515,7 @@
     B.push({ x: 164, y: 146, w: 128, h: 18, label: 'Restore backup', act: openRestore });
     B.push({ x: 300, y: 146, w: 134, h: 18, label: 'Use another code', act: enterCode });
     B.push({ x: 28, y: 170, w: 128, h: 18, label: 'Turn off here', act: turnOff });
+    B.push({ x: 164, y: 170, w: 128, h: 18, label: 'QR code', act: v2632showQr });
     return B;
   }
   function drawCloudTab() {
@@ -492,8 +527,8 @@
     const st = statusLine();
     text('Status:', 28, 54, '#c8b89a', 7); text(fitText(st[0], 330, 7), 74, 54, st[1], 7);
     if (!c.code) {
-      wrapWords('Turn this on to get a private sync code. Type the same code on your other devices to play the same burrow. Only one device plays at a time.', 410, 6).slice(0, 2).forEach((ln, i) => text(ln, 28, 70 + i * 9, '#a09080', 6));
-      text('This device:  ' + c.name, 210, 156, '#e8e0d0', 7);
+      wrapWords('Turn this on to get a private sync code. Type the same code on your other devices, or scan the QR, to play the same burrow. Only one device plays at a time.', 410, 6).slice(0, 2).forEach((ln, i) => text(ln, 28, 70 + i * 9, '#a09080', 6));
+      text('This device:  ' + c.name, 210, 182, '#e8e0d0', 7);
     } else {
       text('Sync code', 28, 81, '#c8b89a', 7);
       const pc = prettyCode(c.code);
@@ -549,7 +584,13 @@
   }
   async function enterCode() {
     const v = await domAsk({ title: 'Link this device', label: 'Type the sync code from your other device (the dashes are optional):', placeholder: 'XXXXX-XXXXX-XXXXX-XXXXX-XXXXXX', max: 40, caps: true, ok: 'Link',
-      check: s => normCode(s), bad: 'That code is not right - it has 26 letters and numbers' });
+      codeFmt: true, check: s => normCode(s), bad: 'That code is not right - it has 26 letters and numbers',
+      extra: { label: 'Scan', act: () => { v2632scan(); } } });
+    if (!v) return;
+    v2632linkCode(v, 'typed');
+  }
+  /* v0.26.32: shared link path used by typing, QR scan and #cloud= links (never silent) */
+  function v2632linkCode(v, why) {
     if (!v) return;
     if (v === CL.cfg.code) { note('This device already uses that code'); return; }
     if (CL.cfg.code) release(false);
@@ -612,5 +653,235 @@
   };
   const _mr = modalRect;
   modalRect = function (m) { if (!m.list) return _mr(m); const h = 74 + m.btns.length * 20; return { x: 90, y: Math.round((VH - h) / 2) - 8, w: 300, h }; };
-  CL._test = { normCode, prettyCode, guessName, claim, beat, upload, pullLoad, showConflict, lostTo, showHeld, release, turnOn, startWith, syncNow, openRestore, retryOffline, flushAndRelease, isGuest };
+  /* ================= v0.26.32: QR code linking for cloud saves =================
+     Show a QR of the GitHub Pages #cloud= URL so a phone can link without typing 26 characters.
+     Scan with the camera (BarcodeDetector on Chrome Android, jsQR on iOS Safari). Opening a
+     #cloud= link asks first and never links silently. The code is a credential: clear it from
+     the URL, never log it, and warn about scanning strangers' codes. */
+  const V2632_PAGES = 'https://chazz8990.github.io/burrow-web/';
+  const v2632cloudUrl = code => V2632_PAGES + '#cloud=' + code;
+  function v2632parseCloudPayload(raw) {
+    const s = String(raw || '').trim();
+    if (!s) return null;
+    /* accept Pages URL, localhost (tests), a bare #cloud= fragment, or a bare code */
+    const m = s.match(/^(?:https:\/\/chazz8990\.github\.io\/burrow-web\/?|https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?\/?)?#cloud=([0-9A-Za-zIlO\s-]{16,40})\s*$/i);
+    if (m) {
+      const c = normCode(m[1]);
+      return c ? { code: c } : { err: 'bad' };
+    }
+    if (/^https?:\/\//i.test(s) || /#cloud=/i.test(s)) return { err: 'bad' };
+    const c = normCode(s);
+    return c ? { code: c } : { err: 'bad' };
+  }
+  function v2632clearHash() {
+    try {
+      if (location.hash && /cloud=/i.test(location.hash)) history.replaceState(null, '', location.pathname + location.search);
+    } catch (e) {}
+  }
+  function v2632readHash() {
+    try {
+      const h = location.hash || '';
+      const m = /^#cloud=(.+)$/i.exec(h);
+      if (!m) return;
+      const parsed = v2632parseCloudPayload('#cloud=' + m[1]);
+      v2632clearHash();
+      if (!parsed || parsed.err || !parsed.code) { note('That link has a broken code'); return; }
+      CL._pendingCloud = parsed.code;
+    } catch (e) { try { v2632clearHash(); } catch (e2) {} }
+  }
+  v2632readHash();
+  window.addEventListener('hashchange', () => { try { v2632readHash(); } catch (e) {} });
+
+  function v2632domShell(title) {
+    if (CL.dom) domClose(null);
+    const el = document.createElement('div');
+    el.setAttribute('role', 'dialog');
+    el.style.cssText = 'position:fixed;left:50%;top:42%;transform:translate(-50%,-50%);z-index:99999;background:#120c08;border:2px solid #c8a050;' +
+      'padding:14px 16px;min-width:min(320px,88vw);max-width:92vw;font:16px/1.4 monospace;color:#e8e0d0;box-shadow:0 0 0 100vmax rgba(0,0,0,.55)';
+    const h = document.createElement('div'); h.textContent = title; h.style.cssText = 'color:#ffe8a8;font-size:18px;margin-bottom:8px';
+    el.appendChild(h);
+    return el;
+  }
+  function v2632mkBtn(t, hot) {
+    const b = document.createElement('button'); b.type = 'button'; b.textContent = t;
+    b.style.cssText = 'font:16px monospace;padding:8px 14px;min-height:44px;cursor:pointer;background:' + (hot ? '#3a2a14' : '#241c14') +
+      ';color:' + (hot ? '#ffe080' : '#e8e0d0') + ';border:1px solid ' + (hot ? '#e6c34a' : '#6a5030');
+    return b;
+  }
+  function v2632showQr() {
+    if (!CL.cfg.code) return;
+    const code = CL.cfg.code, url = v2632cloudUrl(code);
+    if (typeof qrcode !== 'function') { note('QR library missing'); return; }
+    const el = v2632domShell('Scan to link a device');
+    el.style.top = '50%';
+    el.style.maxHeight = '92vh';
+    el.style.overflow = 'auto';
+    const tip = document.createElement('div');
+    tip.textContent = 'Phone camera → this QR.';
+    tip.style.cssText = 'color:#c8b89a;font-size:13px;margin-bottom:6px';
+    const warn = document.createElement('div');
+    warn.textContent = 'Only scan with your own devices';
+    warn.style.cssText = 'color:#e0a070;font-size:13px;margin:0 0 6px';
+    const cv = document.createElement('canvas');
+    cv.setAttribute('aria-label', 'Cloud save QR code');
+    cv.style.cssText = 'display:block;margin:0 auto 6px;background:#fff;image-rendering:pixelated;max-width:min(220px,70vw);height:auto';
+    try {
+      const q = qrcode(0, 'M');
+      q.addData(url); q.make();
+      /* 6-8 px/module with quiet zone; keep under ~220px so short phone landscape still fits */
+      const n = q.getModuleCount(), quiet = 2;
+      const cell = Math.max(4, Math.min(7, Math.floor(200 / (n + quiet * 2))));
+      const size = (n + quiet * 2) * cell;
+      cv.width = size; cv.height = size;
+      const ctx = cv.getContext('2d');
+      ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, size, size);
+      ctx.fillStyle = '#000000';
+      for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (q.isDark(r, c))
+        ctx.fillRect((c + quiet) * cell, (r + quiet) * cell, cell, cell);
+    } catch (e) { tip.textContent = 'Could not draw the QR code'; }
+    const codeLine = document.createElement('div');
+    codeLine.textContent = prettyCode(code);
+    codeLine.style.cssText = 'color:#ffe080;font-size:12px;text-align:center;letter-spacing:1px;margin-bottom:6px;word-break:break-all';
+    const row = document.createElement('div'); row.style.cssText = 'display:flex;justify-content:flex-end;margin-top:2px';
+    const close = v2632mkBtn('Close', true);
+    close.onclick = () => domClose(null);
+    row.appendChild(close);
+    el.append(tip, warn, cv, codeLine, row);
+    el.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Escape') { e.preventDefault(); domClose(null); } });
+    el.addEventListener('keyup', e => e.stopPropagation());
+    el.addEventListener('pointerdown', e => e.stopPropagation());
+    document.body.appendChild(el);
+    CL.dom = { el, res: () => {}, inp: null, qr: true };
+    try { for (const k in keys) keys[k] = false; } catch (e) {}
+    setTimeout(() => { try { close.focus(); } catch (e) {} }, 30);
+  }
+
+  let v2632jsqrP = null;
+  function v2632loadJsQR() {
+    if (typeof jsQR === 'function') return Promise.resolve(jsQR);
+    if (v2632jsqrP) return v2632jsqrP;
+    v2632jsqrP = new Promise((res, rej) => {
+      const s = document.createElement('script');
+      s.src = 'jsqr.min.js?v=' + (typeof VERSION === 'string' ? VERSION : '0');
+      s.onload = () => (typeof jsQR === 'function' ? res(jsQR) : rej(new Error('jsQR')));
+      s.onerror = () => rej(new Error('jsQR load'));
+      document.head.appendChild(s);
+    });
+    return v2632jsqrP;
+  }
+  function v2632stopScan(stream) {
+    try { if (stream) stream.getTracks().forEach(t => t.stop()); } catch (e) {}
+    if (CL._scan) { try { clearInterval(CL._scan.iv); } catch (e) {} CL._scan = null; }
+  }
+  async function v2632scan() {
+    const media = navigator.mediaDevices;
+    if (!media || typeof media.getUserMedia !== 'function') {
+      note('No camera here - type the code instead');
+      enterCode();
+      return;
+    }
+    let stream = null;
+    try {
+      stream = await media.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
+    } catch (e) {
+      note('Camera permission denied - type the code instead');
+      enterCode();
+      return;
+    }
+    const el = v2632domShell('Scan a Burrow QR');
+    const tip = document.createElement('div');
+    tip.textContent = 'Point at the QR on your other device. Only scan your own codes.';
+    tip.style.cssText = 'color:#c8b89a;font-size:13px;margin-bottom:8px;max-width:300px';
+    const vid = document.createElement('video');
+    vid.setAttribute('playsinline', ''); vid.muted = true; vid.autoplay = true;
+    vid.style.cssText = 'display:block;width:min(280px,80vw);max-height:40vh;background:#000;margin:0 auto 8px';
+    vid.srcObject = stream;
+    try { await vid.play(); } catch (e) {}
+    const err = document.createElement('div'); err.style.cssText = 'color:#e07070;font-size:13px;min-height:18px';
+    const row = document.createElement('div'); row.style.cssText = 'display:flex;justify-content:flex-end;gap:10px';
+    const cancel = v2632mkBtn('Cancel', false);
+    const finish = (code, bad) => {
+      v2632stopScan(stream);
+      domClose(null);
+      if (bad) { note(bad); return; }
+      if (code) v2632confirmLink(code, 'scan');
+    };
+    cancel.onclick = () => finish(null);
+    row.appendChild(cancel);
+    el.append(tip, vid, err, row);
+    el.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Escape') { e.preventDefault(); finish(null); } });
+    el.addEventListener('pointerdown', e => e.stopPropagation());
+    document.body.appendChild(el);
+    CL.dom = { el, res: () => {}, inp: null, scan: true };
+    const onHide = () => finish(null);
+    window.addEventListener('pagehide', onHide, { once: true });
+
+    let detector = null;
+    try { if (typeof BarcodeDetector === 'function') detector = new BarcodeDetector({ formats: ['qr_code'] }); } catch (e) {}
+    const off = document.createElement('canvas');
+    const octx = off.getContext('2d', { willReadFrequently: true });
+    let jsqrFn = null;
+    if (!detector) {
+      try { jsqrFn = await v2632loadJsQR(); } catch (e) { err.textContent = 'Scanner failed to load'; finish(null, 'Could not start the scanner'); return; }
+    }
+    const tick = async () => {
+      if (!CL.dom || !CL.dom.scan) return;
+      try {
+        if (vid.readyState < 2) return;
+        let text = null;
+        if (detector) {
+          const codes = await detector.detect(vid);
+          if (codes && codes[0] && codes[0].rawValue) text = codes[0].rawValue;
+        } else if (jsqrFn) {
+          const w = vid.videoWidth | 0, h = vid.videoHeight | 0;
+          if (w < 8 || h < 8) return;
+          off.width = w; off.height = h;
+          octx.drawImage(vid, 0, 0, w, h);
+          const img = octx.getImageData(0, 0, w, h);
+          const r = jsqrFn(img.data, w, h);
+          if (r && r.data) text = r.data;
+        }
+        if (!text) return;
+        const parsed = v2632parseCloudPayload(text);
+        if (!parsed || parsed.err || !parsed.code) { err.textContent = 'That QR is not a Burrow code'; return; }
+        finish(parsed.code);
+      } catch (e) {}
+    };
+    CL._scan = { iv: setInterval(tick, 200), stream };
+    try { for (const k in keys) keys[k] = false; } catch (e) {}
+  }
+
+  function v2632confirmLink(code, why) {
+    if (!code) return;
+    if (code === CL.cfg.code) { note('Already linked'); return; }
+    const mask = prettyCode(code).slice(0, 5) + '-*****';
+    const lines = ['Code ' + mask + '  (only continue if this is yours)'];
+    if (CL.cfg.code) lines.push('This switches away from the code on this device.');
+    const localAt = CL.cfg.localAt || LAST_SAVE_AT;
+    if (localAt) lines.push('This device save: ' + fmtT(localAt));
+    if (CL.meta && CL.meta.at) lines.push('Cloud save: ' + fmtT(CL.meta.at));
+    CL.modal = {
+      kind: 'linkAsk', title: 'Link this device to cloud save?', lines,
+      btns: [
+        { label: 'Link', hot: true, act: () => { closeModal(); unpauseIfOurs(); v2632linkCode(code, why || 'confirm'); } },
+        { label: 'Cancel', cancel: true, act: () => { closeModal(); unpauseIfOurs(); } }
+      ],
+      sel: 1
+    };
+    pauseForUs();
+  }
+
+  /* pending #cloud= from a cold open: ask once the miner is in the world */
+  setInterval(() => {
+    try {
+      if (!CL._pendingCloud) return;
+      if (!S || !S.p || S.charSel || S.nameEntry) return;
+      if (CL.modal || CL.dom) return;
+      const code = CL._pendingCloud; CL._pendingCloud = null;
+      v2632confirmLink(code, 'hash');
+    } catch (e) {}
+  }, 1000);
+
+  CL._test = { normCode, prettyCode, guessName, claim, beat, upload, pullLoad, showConflict, lostTo, showHeld, release, turnOn, startWith, syncNow, openRestore, retryOffline, flushAndRelease, isGuest,
+    v2632fmtCode, v2632parseCloudPayload, v2632cloudUrl, v2632showQr, v2632scan, v2632confirmLink, v2632linkCode, v2632clearHash };
 })();
