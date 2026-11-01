@@ -1,0 +1,52 @@
+/* v0.26.27: phone / tablet touch controls (see touch.js). Every button is at least 44 x 44 css px. */
+html.touch, html.touch body { touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; overscroll-behavior: none; }
+html.touch #game { cursor: default; }
+#tc { --ts: 1; --ta: 0.85; --bar: 0px; --tabh: 30px; position: fixed; inset: 0; pointer-events: none; z-index: 10; font-family: system-ui, sans-serif; color: #f4e6c8; }
+#tc .tc-btn, #tc .tc-stick { pointer-events: auto; }
+.tc-btn { position: absolute; display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 50%; min-width: 44px; min-height: 44px;
+  background: rgba(30, 22, 14, 0.45); border: 2px solid rgba(244, 230, 200, 0.6); box-shadow: 0 1px 4px rgba(0,0,0,.4); opacity: var(--ta); -webkit-tap-highlight-color: transparent; }
+.tc-btn b { font-size: 13px; letter-spacing: .5px; text-shadow: 0 1px 2px #000; line-height: 1.1; }
+.tc-btn i { font-style: normal; font-size: 10px; opacity: .85; text-shadow: 0 1px 2px #000; }
+.tc-btn.on { background: rgba(240, 200, 90, 0.6); }
+/* left thumb stick */
+.tc-stick { position: absolute; left: 16px; bottom: 46px; width: calc(110px * var(--ts)); height: calc(110px * var(--ts)); border-radius: 50%; background: rgba(30,22,14,.34); border: 2px solid rgba(244,230,200,.5); opacity: var(--ta); }
+.tc-nub { position: absolute; left: 25%; top: 25%; width: 50%; height: 50%; border-radius: 50%; background: rgba(244,230,200,.55); border: 2px solid rgba(255,255,255,.6); pointer-events: none; }
+.tc-lbl { position: absolute; width: 100%; text-align: center; font-size: 10px; opacity: .8; text-shadow: 0 1px 2px #000; pointer-events: none; }
+.tc-stick-lbl { top: -15px; }
+/* right action cluster (mirrored for left-handed) */
+.tc-act { position: absolute; right: 0; bottom: 0; width: 240px; height: 210px; transform: scale(var(--ts)); transform-origin: 100% 100%; pointer-events: none; }
+.tc-jump { right: 16px; bottom: 20px; width: 68px; height: 68px; }
+.tc-dig  { right: 92px; bottom: 12px; width: 62px; height: 62px; border-color: rgba(250,190,90,.85); }
+.tc-use  { right: 96px; bottom: 84px; width: 52px; height: 52px; }
+.tc-item { right: 162px; bottom: 26px; width: 52px; height: 52px; }
+.tc-pack { right: 16px; bottom: 98px; width: 54px; height: 54px; }
+.tc-map  { right: 66px; bottom: 146px; width: 52px; height: 52px; }
+#tc.lefty .tc-act { right: auto; left: 0; transform: scale(calc(-1 * var(--ts)), var(--ts)); transform-origin: 0 100%; }
+#tc.lefty .tc-act .tc-btn > * { transform: scaleX(-1); }
+#tc.lefty .tc-stick { left: auto; right: 16px; }
+/* small buttons: CRAFT EAT DRINK menu. Wide phones: a column in the right-hand bar. 16:9: a row under the level box. */
+.tc-top, .tc-menu { position: absolute; display: flex; gap: 6px; pointer-events: none; }
+.tc-top .tc-btn, .tc-menu .tc-btn { position: static; border-radius: 10px; height: 44px; padding: 0 10px; }
+.tc-top { right: 6px; top: 50px; flex-direction: row; }
+.tc-top .tc-btn { width: 56px; padding: 0; }
+.tc-top .tc-btn b, .tc-menu .tc-btn b { font-size: 11px; }
+#tc.bars .tc-top { flex-direction: column; top: 8px; right: max(4px, calc((var(--bar) - 58px) / 2)); }
+#tc.bars .tc-top .tc-btn { width: 58px; }
+/* menu buttons: TAB / TAB / CLOSE */
+.tc-menu { right: 12px; bottom: 10px; display: none; }
+.tc-close { border-color: rgba(240,140,120,.85) !important; }
+#tc.bars .tc-menu { flex-direction: column; bottom: auto; top: 50%; transform: translateY(-50%); right: max(4px, calc((var(--bar) - 64px) / 2)); }
+#tc.bars .tc-menu .tc-btn { width: 64px; padding: 0; }
+/* v0.26.29: 16:9 menus: the row sits in the strip under the panel, clear of the panel's hint line */
+#tc.menu:not(.bars):not(.map) .tc-menu { bottom: var(--mbb, 10px); }
+#tc.menu:not(.bars):not(.map) .tc-menu .tc-btn { height: var(--mbh, 44px); min-height: var(--mbh, 44px); }
+#tc.map:not(.bars) .tc-menu { bottom: auto; top: var(--tabh); }   /* map on 16:9: under the tab strip, clear of the legend */
+#tc.notabs .tc-tabl, #tc.notabs .tc-tabr { display: none; }
+.tc-hint { position: absolute; left: 50%; transform: translateX(-50%); top: 4px; font-size: 11px; opacity: .8; text-shadow: 0 1px 2px #000; pointer-events: none; transition: opacity 1s; }
+.tc-hint.gone { opacity: 0; }
+#tc.menu .tc-stick, #tc.menu .tc-act, #tc.menu .tc-top, #tc.menu .tc-hint { display: none; }
+#tc.menu .tc-menu { display: flex; }
+.tc-leg { display: none !important; }
+#tc.map .tc-leg { display: flex !important; }
+/* hidden text box that brings up the phone keyboard for co-op fields and chat (16px so iPhones do not zoom) */
+#tc-kb { position: fixed; left: 0; top: 0; width: 1px; height: 1px; opacity: 0; font-size: 16px; border: 0; padding: 0; pointer-events: none; }
