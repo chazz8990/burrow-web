@@ -3,6 +3,14 @@
 Newest update on top. You can also read these in the game: press Esc, then **Patch notes**.
 Older builds used "art" tags: v0.24.4 was art24d and v0.24.3 was art24c. The sections below those are the older builds, kept under their art tags.
 
+## v0.26.33
+
+Phone layout fix for near-square screens (iPhone Duo stand-in).
+
+### Fixed
+- **Touch stick no longer covers the hotbar** on near-square screens (about as tall as they are wide). The stick and JUMP/DIG cluster sit in the bottom letterbox when there is room, or rise above the hotbar. Wide phones (iPhone / Pixel landscape) keep the usual thumb reach.
+- Controls follow the **game canvas and the safe area** (notch / home bar) when you rotate or resize.
+
 ## v0.26.32
 
 Cloud saves: link a phone with a QR code instead of typing the long sync code.

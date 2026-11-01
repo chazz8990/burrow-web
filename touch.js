@@ -208,6 +208,27 @@
   }
   function on() { return wanted() && lastInput !== 'pad'; }
   let lastKey = '';
+  /* v0.26.33: read safe-area insets (iPhone notch / home bar) without touching layout math elsewhere */
+  function safeInsets() {
+    const s = getComputedStyle(document.documentElement);
+    const n = v => { const x = parseFloat(s.getPropertyValue(v)); return isFinite(x) ? x : 0; };
+    /* env() only resolves on some elements; fall back to #tc padding once applied */
+    let l = n('--sai-l'), r = n('--sai-r'), b = n('--sai-b'), t = n('--sai-t');
+    if (!(l || r || b || t)) {
+      try {
+        const cs = getComputedStyle(ui);
+        l = parseFloat(cs.paddingLeft) || 0; r = parseFloat(cs.paddingRight) || 0;
+        b = parseFloat(cs.paddingBottom) || 0; t = parseFloat(cs.paddingTop) || 0;
+      } catch (e) {}
+    }
+    return { l, r, b, t };
+  }
+  /* hotbar band in css px from the bottom of the canvas (Handheld UI makes it taller) */
+  function hotbarBandCss(cr) {
+    let hk = 1; try { if (typeof uiK === 'function') hk = uiK(); } catch (e) {}
+    const viewH = (typeof VH === 'number' && VH > 0) ? VH : 270;
+    return Math.max(28, (22 * hk / viewH) * cr.height + 10);
+  }
   function layout() {
     const show = on();
     document.documentElement.classList.toggle('touch', show);
@@ -218,16 +239,21 @@
     const al = (ALPHA_OPTS.find(o => o[0] === SETTINGS.touchAlpha) || ALPHA_OPTS[1])[2];
     const mode = playMode() ? 'play' : (S && S.mapOpen ? 'map' : 'menu');
     const tabs = mode !== 'play' && hasTabs();
-    const k = [mode, tabs, bar >= 64, sz, al, !!SETTINGS.touchLeft, window.innerWidth, window.innerHeight, VH, cr.top, cr.height].join();
+    const safe = safeInsets();
+    const aspect = window.innerWidth / Math.max(1, window.innerHeight);
+    const botGap = Math.max(0, window.innerHeight - cr.bottom);
+    const lefty = !!SETTINGS.touchLeft;
+    const k = [mode, tabs, bar >= 64, sz, al, lefty, window.innerWidth, window.innerHeight, VH, cr.top, cr.left, cr.width, cr.height, botGap.toFixed(1), aspect.toFixed(3)].join();
     if (k === lastKey) return;
     lastKey = k;
     ui.style.setProperty('--ts', sz); ui.style.setProperty('--ta', al);
     ui.style.setProperty('--bar', Math.max(0, bar) + 'px');
     ui.classList.toggle('bars', bar >= 64);
-    ui.classList.toggle('lefty', !!SETTINGS.touchLeft);
+    ui.classList.toggle('lefty', lefty);
     ui.classList.toggle('menu', mode !== 'play');
     ui.classList.toggle('map', mode === 'map');
     ui.classList.toggle('notabs', !tabs);
+    ui.classList.toggle('square', aspect < 1.4);
     /* the tab strip sits along the top of every panel: in map mode without side bars the buttons sit just under it */
     ui.style.setProperty('--tabh', Math.round(cr.top + cr.height * 0.075) + 'px');
     /* v0.26.29: 16:9 phones (no side bars): TAB / TAB / CLOSE sit in the strip under the menu panel instead of on top of
@@ -236,9 +262,56 @@
     const mbh = Math.max(34, Math.min(44, Math.floor(below - 4)));
     ui.style.setProperty('--mbh', mbh + 'px');
     ui.style.setProperty('--mbb', Math.max(2, Math.floor((below - mbh) / 2)) + 'px');
+
+    /* ---------- v0.26.33: place stick + action cluster vs the canvas / letterbox / hotbar ---------- */
+    const stickH = 110 * sz, actH = 210 * sz;
+    const hb = hotbarBandCss(cr);
+    const minPad = 8 + safe.b;
+    let stickBottom, actBottom;
+    if (mode === 'play' && aspect < 1.4 && botGap >= stickH + 12) {
+      /* near-square with a real bottom letterbox: park the stick in that bar, clear of the canvas */
+      stickBottom = Math.max(minPad, Math.floor((botGap - stickH) / 2));
+      actBottom = Math.max(minPad, Math.min(stickBottom, Math.floor((botGap - Math.min(actH * 0.55, botGap - 8)) / 2)));
+    } else if (mode === 'play') {
+      /* wide or short letterbox: keep thumb reach, but lift clear of the hotbar band on the canvas */
+      const aboveHb = botGap + hb + 8;
+      stickBottom = 46 + safe.b;
+      actBottom = safe.b;
+      if (stickBottom < botGap + hb && stickBottom + stickH > botGap) stickBottom = aboveHb;
+      if (actBottom < botGap + hb * 0.55 && actBottom + actH * 0.45 > botGap) actBottom = Math.min(aboveHb, botGap + Math.floor(hb * 0.35));
+      /* never push the stick off-screen */
+      const maxBottom = window.innerHeight - stickH - 4 - safe.t;
+      if (stickBottom > maxBottom) stickBottom = Math.max(minPad, maxBottom);
+    } else {
+      stickBottom = 46 + safe.b; actBottom = safe.b;
+    }
+    /* keep stick / act inside the canvas horizontal band (or the side letterbox on wide phones) */
+    const stickW = 110 * sz;
+    let stickLeft = Math.max(16 + safe.l, Math.floor(cr.left + 10));
+    let stickRight = Math.max(16 + safe.r, Math.floor(window.innerWidth - cr.right + 10));
+    if (bar >= 64) { stickLeft = Math.max(10 + safe.l, 10); stickRight = Math.max(10 + safe.r, 10); }
+    /* clamp so the stick stays on screen */
+    if (!lefty && stickLeft + stickW > window.innerWidth - 8) stickLeft = Math.max(4, window.innerWidth - stickW - 8);
+    if (lefty && stickRight + stickW > window.innerWidth - 8) stickRight = Math.max(4, window.innerWidth - stickW - 8);
+    const actRight = Math.max(0, Math.floor(window.innerWidth - cr.right));
+    const actLeft = Math.max(0, Math.floor(cr.left));
+    if (lefty) {
+      ui.style.setProperty('--stick-left', 'auto');
+      ui.style.setProperty('--stick-right', stickRight + 'px');
+      ui.style.setProperty('--act-right', 'auto');
+      ui.style.setProperty('--act-left', actLeft + 'px');
+    } else {
+      ui.style.setProperty('--stick-left', stickLeft + 'px');
+      ui.style.setProperty('--stick-right', 'auto');
+      ui.style.setProperty('--act-right', actRight + 'px');
+      ui.style.setProperty('--act-left', 'auto');
+    }
+    ui.style.setProperty('--stick-bottom', Math.round(stickBottom) + 'px');
+    ui.style.setProperty('--act-bottom', Math.round(actBottom) + 'px');
   }
   setInterval(layout, 120);
   window.addEventListener('resize', () => { lastKey = ''; layout(); });
+  window.addEventListener('orientationchange', () => { lastKey = ''; setTimeout(layout, 50); setTimeout(layout, 300); });
 
   /* a touch after using a gamepad brings the touch buttons back */
   window.addEventListener('touchstart', () => { if (wanted() && lastInput === 'pad') { lastInput = 'kb'; lastKey = ''; layout(); } }, { capture: true, passive: true });
@@ -444,6 +517,33 @@
       navigator.serviceWorker.register('sw.js?v=' + encodeURIComponent(VERSION)).catch(() => {});
   } catch (e) {}
 
-  window.BurrowTouch = { on, wanted, playMode, touchHint, rows: TOUCH_ROWS, layout: () => { lastKey = ''; layout(); } };
+  /* v0.26.33: test hooks — canvas/hotbar/control rects in css px for overlap checks */
+  function controlRects() {
+    const stickR = stick.getBoundingClientRect();
+    const btns = {};
+    for (const s of ['.tc-jump', '.tc-dig', '.tc-pump', '.tc-use', '.tc-item', '.tc-pack', '.tc-map']) {
+      const e = ui.querySelector(s); if (e) btns[s.slice(4)] = e.getBoundingClientRect();
+    }
+    const cr = canvas.getBoundingClientRect();
+    const slots = [];
+    try {
+      const hk = (typeof uiK === 'function' ? uiK() : 1);
+      for (let i = 0; i < 10; i++) {
+        const vr = typeof hbSlotR === 'function' ? hbSlotR(i) : { x: (10 + i * 18) * hk, y: VH - 22 * hk, w: 17 * hk, h: 17 * hk };
+        slots.push({
+          i,
+          left: cr.left + (vr.x / VW) * cr.width,
+          top: cr.top + (vr.y / VH) * cr.height,
+          right: cr.left + ((vr.x + vr.w) / VW) * cr.width,
+          bottom: cr.top + ((vr.y + vr.h) / VH) * cr.height
+        });
+      }
+    } catch (e) {}
+    return { stick: stickR, btns, canvas: cr, slots, aspect: window.innerWidth / Math.max(1, window.innerHeight), square: ui.classList.contains('square') };
+  }
+  function overlaps(a, b) {
+    return !!a && !!b && a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+  }
+  window.BurrowTouch = { on, wanted, playMode, touchHint, rows: TOUCH_ROWS, layout: () => { lastKey = ''; layout(); }, controlRects, overlaps };
   layout();
 })();

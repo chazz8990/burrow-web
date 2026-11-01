@@ -1,20 +1,25 @@
-/* v0.26.27: phone / tablet touch controls (see touch.js). Every button is at least 44 x 44 css px. */
+/* v0.26.27: phone / tablet touch controls (see touch.js). Every button is at least 44 x 44 css px.
+   v0.26.33: stick / action cluster sit relative to the canvas (and safe area). On near-square screens
+   they drop into the bottom letterbox or rise above the hotbar so they don't cover slots 1-3. */
 html.touch, html.touch body { touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; overscroll-behavior: none; }
 html.touch #game { cursor: default; }
-#tc { --ts: 1; --ta: 0.85; --bar: 0px; --tabh: 30px; position: fixed; inset: 0; pointer-events: none; z-index: 10; font-family: system-ui, sans-serif; color: #f4e6c8; }
+#tc { --ts: 1; --ta: 0.85; --bar: 0px; --tabh: 30px; --safe-l: 0px; --safe-r: 0px; --safe-b: 0px; --safe-t: 0px;
+  --stick-left: 16px; --stick-right: auto; --stick-bottom: 46px; --act-right: 0px; --act-left: auto; --act-bottom: 0px;
+  position: fixed; inset: 0; pointer-events: none; z-index: 10; font-family: system-ui, sans-serif; color: #f4e6c8;
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px); box-sizing: border-box; }
 #tc .tc-btn, #tc .tc-stick { pointer-events: auto; touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .tc-btn { position: absolute; display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 50%; min-width: 44px; min-height: 44px;
   background: rgba(30, 22, 14, 0.45); border: 2px solid rgba(244, 230, 200, 0.6); box-shadow: 0 1px 4px rgba(0,0,0,.4); opacity: var(--ta); -webkit-tap-highlight-color: transparent; }
 .tc-btn b { font-size: 13px; letter-spacing: .5px; text-shadow: 0 1px 2px #000; line-height: 1.1; }
 .tc-btn i { font-style: normal; font-size: 10px; opacity: .85; text-shadow: 0 1px 2px #000; }
 .tc-btn.on { background: rgba(240, 200, 90, 0.6); }
-/* left thumb stick */
-.tc-stick { position: absolute; left: 16px; bottom: 46px; width: calc(110px * var(--ts)); height: calc(110px * var(--ts)); border-radius: 50%; background: rgba(30,22,14,.34); border: 2px solid rgba(244,230,200,.5); opacity: var(--ta); }
+/* left thumb stick — left/bottom set by touch.js layout() */
+.tc-stick { position: absolute; left: var(--stick-left); right: var(--stick-right); bottom: var(--stick-bottom); width: calc(110px * var(--ts)); height: calc(110px * var(--ts)); border-radius: 50%; background: rgba(30,22,14,.34); border: 2px solid rgba(244,230,200,.5); opacity: var(--ta); }
 .tc-nub { position: absolute; left: 25%; top: 25%; width: 50%; height: 50%; border-radius: 50%; background: rgba(244,230,200,.55); border: 2px solid rgba(255,255,255,.6); pointer-events: none; }
 .tc-lbl { position: absolute; width: 100%; text-align: center; font-size: 10px; opacity: .8; text-shadow: 0 1px 2px #000; pointer-events: none; }
 .tc-stick-lbl { top: -15px; }
 /* right action cluster (mirrored for left-handed) */
-.tc-act { position: absolute; right: 0; bottom: 0; width: 240px; height: 210px; transform: scale(var(--ts)); transform-origin: 100% 100%; pointer-events: none; }
+.tc-act { position: absolute; right: var(--act-right); left: var(--act-left); bottom: var(--act-bottom); width: 240px; height: 210px; transform: scale(var(--ts)); transform-origin: 100% 100%; pointer-events: none; }
 .tc-jump { right: 16px; bottom: 20px; width: 68px; height: 68px; }
 .tc-dig  { right: 92px; bottom: 12px; width: 62px; height: 62px; border-color: rgba(250,190,90,.85); }
 .tc-use  { right: 96px; bottom: 84px; width: 52px; height: 52px; }
@@ -22,9 +27,9 @@ html.touch #game { cursor: default; }
 .tc-pack { right: 16px; bottom: 98px; width: 54px; height: 54px; }
 .tc-map  { right: 66px; bottom: 146px; width: 52px; height: 52px; }
 .tc-pump { right: 160px; bottom: 92px; width: 52px; height: 52px; }
-#tc.lefty .tc-act { right: auto; left: 0; transform: scale(calc(-1 * var(--ts)), var(--ts)); transform-origin: 0 100%; }
+#tc.lefty .tc-act { right: auto; left: var(--act-left, 0px); transform: scale(calc(-1 * var(--ts)), var(--ts)); transform-origin: 0 100%; }
 #tc.lefty .tc-act .tc-btn > * { transform: scaleX(-1); }
-#tc.lefty .tc-stick { left: auto; right: 16px; }
+#tc.lefty .tc-stick { left: auto; right: var(--stick-right); }
 /* small buttons: CRAFT EAT DRINK menu. Wide phones: a column in the right-hand bar. 16:9: a row under the level box. */
 .tc-top, .tc-menu { position: absolute; display: flex; gap: 6px; pointer-events: none; }
 .tc-top .tc-btn, .tc-menu .tc-btn { position: static; border-radius: 10px; height: 44px; padding: 0 10px; }
