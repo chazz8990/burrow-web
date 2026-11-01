@@ -141,6 +141,7 @@
   /* ---------- the overlay ---------- */
   const key = (k, down) => window.dispatchEvent(new KeyboardEvent(down ? 'keydown' : 'keyup', { key: k, bubbles: true }));
   const tap = k => { key(k, true); setTimeout(() => key(k, false), 70); };
+  const safeUnlock = () => { try { unlockAudio(); } catch (e) {} };   /* v0.26.31: a sound error never blocks a button */
   const ui = document.createElement('div'); ui.id = 'tc'; document.body.appendChild(ui);
   const el = (tag, cls, html, parent) => { const e = document.createElement(tag); e.className = cls; if (html != null) e.innerHTML = html; (parent || ui).appendChild(e); return e; };
   const act = el('div', 'tc-act');
@@ -149,23 +150,33 @@
   const setDir = (dx, dy) => {
     const want = { a: dx < -0.35, d: dx > 0.35, w: dy < -0.45, s: dy > 0.45 };
     for (const k in want) { if (want[k] !== !!held[k]) { key(k, want[k]); held[k] = want[k]; } if (want[k]) lastDir = k; }
+    /* v0.26.31: DIG held first, then the stick: dig where the stick points, not the old way too (that is a diagonal = no dig) */
+    if (digK && (held.a || held.d || held.w || held.s) && !held[digK]) { key(digK, false); digK = null; }
   };
   const stickMove = t => { const r = stick.getBoundingClientRect(), R = r.width / 2; let dx = (t.clientX - r.left - R) / R, dy = (t.clientY - r.top - R) / R; const m = Math.hypot(dx, dy); if (m > 1) { dx /= m; dy /= m; } nub.style.transform = `translate(${dx * R * 0.55}px,${dy * R * 0.55}px)`; setDir(dx, dy); };
-  stick.addEventListener('touchstart', e => { e.preventDefault(); unlockAudio(); const t = e.changedTouches[0]; sid = t.identifier; stickMove(t); }, { passive: false });
+  stick.addEventListener('touchstart', e => { e.preventDefault(); safeUnlock(); const t = e.changedTouches[0]; sid = t.identifier; stickMove(t); }, { passive: false });
   stick.addEventListener('touchmove', e => { e.preventDefault(); for (const t of e.changedTouches) if (t.identifier === sid) stickMove(t); }, { passive: false });
   const stickEnd = e => { for (const t of e.changedTouches) if (t.identifier === sid) { sid = null; nub.style.transform = ''; setDir(0, 0); } };
   stick.addEventListener('touchend', stickEnd); stick.addEventListener('touchcancel', stickEnd);
   const btn = (parent, cls, label, sub, down, up) => {
     const b = el('div', 'tc-btn ' + cls, `<b>${label}</b>${sub ? `<i>${sub}</i>` : ''}`, parent);
-    b.addEventListener('touchstart', e => { e.preventDefault(); unlockAudio(); b.classList.add('on'); down(); }, { passive: false });
+    b.addEventListener('touchstart', e => { e.preventDefault(); safeUnlock(); b.classList.add('on'); down(); }, { passive: false });
     const end = e => { e.preventDefault(); b.classList.remove('on'); up && up(); };
     b.addEventListener('touchend', end, { passive: false }); b.addEventListener('touchcancel', end, { passive: false });
     b.addEventListener('click', e => { if (e.detail === 0 || !('ontouchstart' in window)) { down(); up && setTimeout(up, 70); } });  /* mouse on a touch laptop */
     return b;
   };
-  let digK = null;
-  btn(act, 'tc-jump', 'JUMP', 'pump', () => key(bindKey('pump'), true), () => key(bindKey('pump'), false));
-  btn(act, 'tc-dig', 'DIG', 'hold', () => { digK = lastDir; key(digK, true); }, () => { if (digK && !held[digK]) key(digK, false); digK = null; });
+  /* v0.26.31 hotfix: JUMP is the game's jump key (W / Up). Before, it sent the pump key (Space), so it pumped the hose
+     and never jumped. A tap always makes a fresh press, even while the stick is held up. Holding it digs up after
+     0.25 s, the same as holding W on a PC. */
+  let digK = null, digOn = false, jumpK = false;
+  btn(act, 'tc-jump', 'JUMP', null, () => { if (keys.w) key('w', false); key('w', true); jumpK = true; }, () => { if (jumpK && !held.w) key('w', false); jumpK = false; });
+  /* v0.26.31 hotfix: DIG digs even with "Tap a block to dig" on (the phone default). That setting turns off digging
+     with direction keys, so DIG used to do nothing. While DIG is held, the stick (or the last way it pointed) digs. */
+  btn(act, 'tc-dig', 'DIG', 'hold', () => { digOn = true; if (!(held.a || held.d || held.w || held.s)) { digK = lastDir; key(digK, true); } },
+    () => { digOn = false; if (digK && !held[digK]) key(digK, false); digK = null; });
+  btn(act, 'tc-pump', 'PUMP', 'hose', () => key(bindKey('pump'), true), () => key(bindKey('pump'), false));
+  try { const _tcCO = a24dClickOnly; a24dClickOnly = function () { return digOn ? false : _tcCO.apply(this, arguments); }; } catch (e) {}
   btn(act, 'tc-use', 'E', 'use', () => tap(bindKey('interact')));
   btn(act, 'tc-item', 'Q', 'item', () => tap(bindKey('use')));
   btn(act, 'tc-pack', 'PACK', null, () => tap(bindKey('inv')));

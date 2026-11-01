@@ -40,7 +40,7 @@ const SCALE = 2;
 const SAVE_KEY = 'burrow_save_v2';
 /* the one version number the player sees (build label, pause screen, What's new, tab title). Bump the patch number
    for small fixes (0.25.1), the minor number for feature builds (0.26.0). index.html loads the files with ?v=VERSION. */
-const VERSION = '0.26.30';
+const VERSION = '0.26.31';
 const GAME_VER = 'v' + VERSION;
 /* v0.25.14: air jumps: 2, +1 per Spring Boots rank (max 5); all come back on landing */
 const AUTOSAVE_SECS = 30;
@@ -551,7 +551,7 @@ function unlockAudio() {
       masterBus.connect(actx.destination);
       applyAudioGains();
     }
-    if (actx.state === 'suspended') actx.resume();
+    if (actx.state === 'suspended') { const _r = actx.resume(); if (_r && _r.catch) _r.catch(() => {}); }   // v0.26.31: no unhandled rejection when the audio device can't start
     audioReady = true;
     startMusicBed();
   } catch (err) {}

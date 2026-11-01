@@ -3,6 +3,16 @@
 Newest update on top. You can also read these in the game: press Esc, then **Patch notes**.
 Older builds used "art" tags: v0.24.4 was art24d and v0.24.3 was art24c. The sections below those are the older builds, kept under their art tags.
 
+## v0.26.31
+
+A quick fix for phones and tablets.
+
+### Fixed
+- **JUMP jumps again:** the on-screen JUMP button was pumping the hose instead of jumping. It now jumps, also while you hold the stick.
+- **DIG digs again:** with "Tap a block to dig" on (the phone default), the DIG button did nothing. Hold DIG to dig the way you are facing, or hold the stick and DIG to dig in that direction. Tapping a block still digs it.
+- **New PUMP button** for the hose, since JUMP no longer does that.
+- **iPhone touch fixes:** holding a button no longer selects text, opens the iPhone pop-up menu or zooms the page.
+
 ## v0.26.30
 
 Cloud saves: play the same burrow on your PC, Legion Go and phone.

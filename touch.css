@@ -2,7 +2,7 @@
 html.touch, html.touch body { touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; overscroll-behavior: none; }
 html.touch #game { cursor: default; }
 #tc { --ts: 1; --ta: 0.85; --bar: 0px; --tabh: 30px; position: fixed; inset: 0; pointer-events: none; z-index: 10; font-family: system-ui, sans-serif; color: #f4e6c8; }
-#tc .tc-btn, #tc .tc-stick { pointer-events: auto; }
+#tc .tc-btn, #tc .tc-stick { pointer-events: auto; touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .tc-btn { position: absolute; display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 50%; min-width: 44px; min-height: 44px;
   background: rgba(30, 22, 14, 0.45); border: 2px solid rgba(244, 230, 200, 0.6); box-shadow: 0 1px 4px rgba(0,0,0,.4); opacity: var(--ta); -webkit-tap-highlight-color: transparent; }
 .tc-btn b { font-size: 13px; letter-spacing: .5px; text-shadow: 0 1px 2px #000; line-height: 1.1; }
@@ -21,6 +21,7 @@ html.touch #game { cursor: default; }
 .tc-item { right: 162px; bottom: 26px; width: 52px; height: 52px; }
 .tc-pack { right: 16px; bottom: 98px; width: 54px; height: 54px; }
 .tc-map  { right: 66px; bottom: 146px; width: 52px; height: 52px; }
+.tc-pump { right: 160px; bottom: 92px; width: 52px; height: 52px; }
 #tc.lefty .tc-act { right: auto; left: 0; transform: scale(calc(-1 * var(--ts)), var(--ts)); transform-origin: 0 100%; }
 #tc.lefty .tc-act .tc-btn > * { transform: scaleX(-1); }
 #tc.lefty .tc-stick { left: auto; right: 16px; }
