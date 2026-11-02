@@ -40,7 +40,7 @@ const SCALE = 2;
 const SAVE_KEY = 'burrow_save_v2';
 /* the one version number the player sees (build label, pause screen, What's new, tab title). Bump the patch number
    for small fixes (0.25.1), the minor number for feature builds (0.26.0). index.html loads the files with ?v=VERSION. */
-const VERSION = '0.26.33';
+const VERSION = '0.26.34';
 const GAME_VER = 'v' + VERSION;
 /* v0.25.14: air jumps: 2, +1 per Spring Boots rank (max 5); all come back on landing */
 const AUTOSAVE_SECS = 30;

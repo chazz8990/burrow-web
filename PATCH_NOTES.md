@@ -3,6 +3,19 @@
 Newest update on top. You can also read these in the game: press Esc, then **Patch notes**.
 Older builds used "art" tags: v0.24.4 was art24d and v0.24.3 was art24c. The sections below those are the older builds, kept under their art tags.
 
+## v0.26.34
+
+Phone co-op: reconnect after the screen locks, plus a tighter guest slot on the host.
+
+### New
+- **Reconnect after lock:** if your phone locks mid co-op, unlocking comes back with a small **Reconnecting...** chip and rejoins the same game (same join code / Wi-Fi address and your player key). Only state is requested again - old dig or place intents are dropped.
+- **Guest grace (~60 s):** the host keeps your cabin and player slot for about a minute so you land in the same spot. A kick still ends the slot right away and blocks auto-rejoin.
+
+### Notes
+- Never auto-hosts. Cloud saves stay paused for guests, same as before.
+- Real phone↔PC over the internet still needs a live check with a join code (carrier NATs can fail until a Hide-my-IP relay exists).
+- **Security:** a guest slot is only reclaimed after a real drop (soft-away). A second join with a live player's key cannot take over their slot. Leave, kick, flood and bad-data end the slot immediately (no grace).
+
 ## v0.26.33
 
 Phone layout fix for near-square screens (iPhone Duo stand-in).

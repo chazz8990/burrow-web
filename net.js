@@ -39,7 +39,7 @@
      The host owns the world; a friend's message can only ask for things a normal game would do near that
      friend. Floods get dropped and, after 3 strikes, the sender is removed. */
   const SEC = NET.sec = { maxMsg: 64 * 1024, maxHostMsg: 4 * 1024 * 1024, rateMsgs: 300, rateBytes: 512 * 1024, kickAt: 3, banned: new Set(), dropped: 0, kicks: 0, last: '' };
-  const CLIENT_T = new Set(['p', 'chat', 'nm', 'lair', 'pz', 'brk', 'tile', 'pump', 'boom', 'drop', 'take', 'rv', 'rope', 'sput', 'sup', 'stake', 'hup', 'ssort', 'char']);
+  const CLIENT_T = new Set(['p', 'chat', 'nm', 'lair', 'pz', 'brk', 'tile', 'pump', 'boom', 'drop', 'take', 'rv', 'rope', 'sput', 'sup', 'stake', 'hup', 'ssort', 'char', 'quit']);   /* v0.26.34: quit = intentional Leave */
   const PEER_T = new Set(['p', 'chat']);          /* the only kinds a friend may send to everyone */
   const NOFROM_T = new Set(['welcome', 'err', 'hostleft']); /* only the relay itself sends these */
   const HOST_T = new Set(['bye', 'wpart', 'ro', 'p', 'chat', 'tl', 'brkOk', 'brkNo', 'tfix', 'st', 'hs', 'rp', 'rw', 'got', 'sback', 'sgot', 'supok', 'supno', 'pop', 'arm', 'lair', 'rv', 'pzs', 'vs', 'sx', 'boss', 'bs', 'bh', 'ev', 'hostleft', 'charok']);
@@ -254,7 +254,20 @@
   };
   NET.join = function () { NET.online = null; NET.hostLeft = false; NET.retry = 0; NET.built = false; connect('join'); };
   NET.leave = function () {
-    if (NET.role === 'client' || NET.role === 'offline') { savePlayer(); backToMenu(); return; }
+    if (NET.role === 'client' || NET.role === 'offline') {
+      /* v0.26.34: tell the host this is intentional so the slot ends now (no 60s grace).
+         Send quit before savePlayer - a throw there must not skip the hard leave. */
+      try {
+        if (NET.ws && NET.ws.readyState === 1) {
+          send({ t: 'quit' });
+          const ws = NET.ws;
+          setTimeout(() => { try { NET.wantClose = true; ws.close(); } catch (err) {} }, 40);
+        }
+      } catch (err) {}
+      try { savePlayer(); } catch (err) {}
+      setTimeout(() => backToMenu(), 120);
+      return;
+    }
     NET.wantClose = true;
     if (NET.ws) try { NET.ws.close(); } catch (err) {}
     NET.ws = null; NET.role = 'off'; NET.peers.clear(); scaleBosses();
@@ -321,17 +334,33 @@
           toast('Hosting your world', NET.urls[0] ? 'friends open ' + NET.urls[0] : 'friends join from the Multiplayer menu', '#80e080', 'ui');
           sendRoster();
         } else {
-          try { homeSnapshot(); } catch (err) { console.warn('could not take your miner along', err); }   /* v0.26.9 */
+          /* v0.26.9 miner-along; v0.26.34: a mid-session reconnect must refresh carry from the live miner
+             (homeSnapshot no-ops once NET.home is set, and a stale first-join carry would wipe gold/inv) */
+          try {
+            if (NET.mpWorld && S && S.p) {
+              try { savePlayer(); } catch (e) {}
+              NET.carry = clampChar(charOf(S));
+            } else {
+              homeSnapshot();
+            }
+          } catch (err) { console.warn('could not take your miner along', err); }
           if (NET.away) { toast('Rejoined ' + cleanName(m.hostName, 'the host'), 'back in the game', '#80e080', 'ui'); NET.away = null; }   /* v0.26.11 */
+          if (NET.reconnectChip) NET.reconnectChip = null;   /* v0.26.34 */
           NET.hostBack = null;
           NET.role = 'client'; NET.hostName = m.hostName || 'host'; NET.built = false; NET.parts = null;
           NET.hostRj = (typeof m.rj === 'string' && /^[a-z0-9]{12,32}$/.test(m.rj)) ? m.rj : '';   /* v0.26.9: Recent games */
+          try { NET.saveLastJoin(); } catch (err) {}   /* v0.26.34: phone lock / resume */
           setStatus('Joined ' + NET.hostName + "'s world - loading...", '#80e080');
         }
         return;
     }
     if (NET.role === 'host') {
-      if (m.t === 'join' || m.t === 'leave') { if (!isInt(m.from) || m.from < 2) return secDrop('bad id'); m.name = cleanName(m.name, 'Miner'); m.key = cleanKey(m.key); return hostMsg(m); }
+      if (m.t === 'join' || m.t === 'leave' || m.t === 'quit') {
+        if (!isInt(m.from) || m.from < 2) return secDrop('bad id');
+        m.name = cleanName(m.name, 'Miner'); m.key = cleanKey(m.key);
+        if (m.t === 'leave' && m.hard) m.hard = 1;
+        return hostMsg(m);
+      }
       if (!CLIENT_T.has(m.t)) return secDrop('type ' + m.t);
       const pe = peerOf(m.from);
       if (!pe) return secDrop('unknown sender');
@@ -356,20 +385,46 @@
       case 'join': {
         if (!NET.online && NET.kickedHas && NET.kickedHas(m.key)) { send({ t: 'kick', id: from }); SEC.blocked = (SEC.blocked | 0) + 1; return; }   /* v0.26.8: on the kicked list */
         if (!NET.online && !LAN_OK.has(m) && NET.askOn() && !(NET.autoOk && NET.autoOk(m.key))) { lanAsk(from, m); return; }   /* v0.26.9: Wi-Fi asks too */
+        /* v0.26.34: reclaim tint / cabin only for a soft-away slot (awayAt). Never delete a live peer's
+           entry on a matching key - cabin lists expose keys, so that would let a guest kick/impersonate. */
+        let reused = null;
+        if (m.key) {
+          for (const [id, p] of NET.peers) {
+            if (p.key === m.key && p.awayAt) { reused = p; NET.peers.delete(id); break; }
+          }
+        }
         const used = new Set([NET.myCol, ...[...NET.peers.values()].map(p => p.col)]);
-        const col = TINTS.find(c => !used.has(c)) || TINTS[NET.peers.size % 4];
-        NET.peers.set(from, { id: from, name: m.name, col, s: null, buf: [], last: nowMs(), key: m.key || '' });
-        if (typeof assignHouse === 'function') { try { assignHouse(m.key || ('peer' + from), m.name); } catch (err) { console.error(err); } }
+        const col = (reused && reused.col) || TINTS.find(c => !used.has(c)) || TINTS[NET.peers.size % 4];
+        NET.peers.set(from, { id: from, name: m.name, col, s: null, buf: [], last: nowMs(), key: m.key || '', awayAt: 0 });
+        /* if another live peer already holds this key, don't hand them that cabin */
+        let houseKey = m.key || ('peer' + from);
+        if (m.key) {
+          for (const p of NET.peers.values()) {
+            if (p.id !== from && p.key === m.key && !p.awayAt) { houseKey = 'peer' + from; break; }
+          }
+        }
+        if (typeof assignHouse === 'function') { try { assignHouse(houseKey, m.name); } catch (err) { console.error(err); } }
         sendWorld(from);
         NET.sendHouses();
         sendRoster();
         scaleBosses();
-        toast(m.name + ' joined', 'co-op on your Wi-Fi', col, 'ui');
+        toast(m.name + (reused ? ' reconnected' : ' joined'), reused ? 'back in the game' : 'co-op on your Wi-Fi', col, 'ui');
         return;
       }
+      case 'quit':
+        /* v0.26.34: intentional Leave - end the slot now (no grace) */
+        m.hard = 1;
+        /* falls through to leave */
       case 'leave': {
         lanAskDrop(from);
         const p = peerOf(from);
+        /* v0.26.34: soft grace only for an unexpected drop. Kick / flood / bad-data / Leave are hard. */
+        if (p && !p._hardLeave && !m.hard) {
+          p.awayAt = nowMs(); p.s = null; p.buf = [];
+          sendRoster();
+          return;
+        }
+        if (p) p._hardLeave = true;
         NET.peers.delete(from);
         NET.sendHouses();
         sendRoster(); scaleBosses();
@@ -838,6 +893,8 @@
     try { NET.recentAdd(); } catch (err) { console.warn('recent games', err); }   /* v0.26.9 */
     NET._rejoin = null;
     NET.pend.clear();
+    NET.reconnectChip = null;   /* v0.26.34 */
+    try { NET.saveLastJoin(); } catch (err) {}
     setStatus('Playing in ' + NET.hostName + "'s world.", '#80e080');
     toast("Joined " + NET.hostName + "'s world", carried ? 'you brought your miner - progress goes home with you' : fresh ? 'fresh miner - your progress saves on this computer' : 'welcome back - your miner was saved here', '#80e080', 'ui');
     savePlayer();
@@ -1669,7 +1726,7 @@
             clearTimeout(hiT);
             if (c.gone) return; c.gone = true;
             NET.joinAsk = NET.joinAsk.filter(q => q.c !== c);
-            if (c.id) { conns.delete(c.id); if (c.ok) fs.deliver({ t: 'leave', from: c.id }); }
+            if (c.id) { conns.delete(c.id); if (c.ok) fs.deliver({ t: 'leave', from: c.id }); }   /* soft: unexpected drop keeps host grace */
           };
           conn.on('close', gone); conn.on('error', gone);
           conn.on('iceStateChanged', s => { if (s === 'failed' || s === 'closed' || s === 'disconnected') { if (s !== 'disconnected') gone(); } });
@@ -1684,7 +1741,11 @@
         tx(c, { t: 'err', code: 'kicked', msg: 'The host removed you from this game' + (why ? ' (' + why + ')' : '') + '.' });
         const was = c.ok; c.ok = false; c.gone = true;
         NET.joinAsk = NET.joinAsk.filter(q => q.c !== c);
-        if (c.id) { conns.delete(c.id); if (was) fs.deliver({ t: 'leave', from: c.id }); }
+        /* v0.26.34: flood / bad-data / host kick - hard leave (no grace) */
+        if (c.id) {
+          const pe = NET.peers.get(c.id); if (pe) pe._hardLeave = true;
+          conns.delete(c.id); if (was) fs.deliver({ t: 'leave', from: c.id, hard: 1 });
+        }
         setTimeout(() => { try { c.conn.close(); } catch (e) {} }, 200);
         toast((c.name || 'A player') + ' was removed', why || 'by you', '#e07070', 'ui');
       }
@@ -1942,8 +2003,9 @@
       if (typeof SETTINGS.mpAsk !== 'boolean') SETTINGS.mpAsk = true; if (typeof SETTINGS.mpHideIp !== 'boolean') SETTINGS.mpHideIp = false; } catch (e) {} return r; }; }
   NET.kick = function (id) {
     if (NET.role !== 'host' || !NET.peers.has(id)) return;
+    const p = NET.peers.get(id); if (p) p._hardLeave = true;   /* v0.26.34: no grace / auto-rejoin for a kick */
     if (NET.online && NET.online.kick) NET.online.kick(id);
-    else { const p = NET.peers.get(id); NET.addKicked(p.key, p.name, '', 'kicked by the host'); send({ t: 'kick', id }); toast((p.name || 'A player') + ' was removed', 'by you', '#e07070', 'ui'); }
+    else { NET.addKicked(p.key, p.name, '', 'kicked by the host'); send({ t: 'kick', id }); toast((p.name || 'A player') + ' was removed', 'by you', '#e07070', 'ui'); }
   };
   NET.answerJoin = function (allow, qq) {
     const q = qq || NET.joinAsk[0]; if (!q) return;
@@ -2256,6 +2318,19 @@
         if (nowMs() - NET.away.t0 >= NET.AWAY_MS) { NET.away = null; hostGone("Host didn't come back"); }
         else setStatus(awayText() + ' (' + NET.awayLeft() + ' s)', '#e0c060');
       }
+      /* v0.26.34: drop soft-away guests after the grace window */
+      if (NET.role === 'host' && NET.peers.size) {
+        const cut = nowMs() - (NET.GRACE_MS || 60000);
+        let dropped = false;
+        for (const [id, p] of NET.peers) {
+          if (p.awayAt && p.awayAt < cut) {
+            NET.peers.delete(id); dropped = true;
+            toast(p.name + ' left', '', '#c8b89a', 'ui');
+          }
+        }
+        if (dropped) { NET.sendHouses(); sendRoster(); scaleBosses(); }
+      }
+      if (NET.reconnectChip && NET.role === 'client' && NET.ws && NET.ws.readyState === 1 && NET.built) NET.reconnectChip = null;
     } catch (e) { console.warn('resume', e); }
     return _rsTick.apply(this, arguments);
   };
@@ -2272,6 +2347,12 @@
       g.fillStyle = hov ? '#5a2018' : '#301410'; g.fillRect(c.x, c.y, c.w, c.h);
       g.strokeStyle = hov ? '#ff8070' : '#a04838'; g.strokeRect(c.x + 0.5, c.y + 0.5, c.w - 1, c.h - 1);
       text('Cancel', c.x + 14, c.y + 10, '#ffd0c8', 6);
+    } else if (NET.reconnectChip && (NET.role === 'client' || NET.role === 'connecting')) {
+      /* v0.26.34: small chip while a phone guest reopens the socket after a lock */
+      const bx = VW / 2 - 70, by = 10, bw = 140, bh = 16;
+      g.fillStyle = 'rgba(20,14,8,0.88)'; g.fillRect(bx, by, bw, bh);
+      g.strokeStyle = '#e0c060'; g.lineWidth = 1; g.strokeRect(bx + 0.5, by + 0.5, bw - 1, bh - 1);
+      text('Reconnecting...', bx + 28, by + 11, '#ffe080', 7);
     }
     return r;
   };
@@ -2345,6 +2426,82 @@
       return r;
     };
   }
+  /* ---------------------------------------------------------------- v0.26.34: phone guest reconnect after screen lock
+     iOS freezes the page when the screen locks; the WebSocket dies and retries stall. On visibility / pageshow,
+     rejoin with the same code and player key (sessionStorage lastJoin). The host keeps the slot ~60 s. Never
+     auto-host. Cloud already stays paused for guests (cloud.js). Kick list still blocks. */
+  NET.GRACE_MS = 60000;
+  NET.reconnectChip = null;
+  const LASTJOIN_K = 'burrow_mp_lastjoin';
+  NET.saveLastJoin = function () {
+    if (NET.role !== 'client' && !(NET.role === 'connecting' && NET.connRole === 'join')) return;
+    const e = NET.online
+      ? { k: 'on', code: String((NET.online.code || '')).slice(0, 8), rj: String(NET.hostRj || NET.online.rj || ''), n: NET.name || '', at: Date.now() }
+      : { k: 'lan', a: String(NET.addr || (isHttp ? location.host : '')).trim().slice(0, 40), n: NET.name || '', at: Date.now() };
+    if (e.k === 'lan' && !e.a) return;
+    if (e.k === 'on' && !e.code && !e.rj) return;
+    NET.lastJoin = e;
+    try { sessionStorage.setItem(LASTJOIN_K, JSON.stringify(e)); } catch (err) {}
+  };
+  NET.loadLastJoin = function () {
+    if (NET.lastJoin && NET.lastJoin.at) return NET.lastJoin;
+    try {
+      const e = JSON.parse(sessionStorage.getItem(LASTJOIN_K) || 'null');
+      if (e && (e.k === 'lan' || e.k === 'on') && typeof e.at === 'number') { NET.lastJoin = e; return e; }
+    } catch (err) {}
+    return null;
+  };
+  NET.clearLastJoin = function () {
+    NET.lastJoin = null;
+    try { sessionStorage.removeItem(LASTJOIN_K); } catch (err) {}
+  };
+  NET.tryReconnect = function (why) {
+    if (NET.kickedMsg || NET.retry >= 99) return false;
+    if (NET.role === 'host' || (NET.role === 'connecting' && NET.connRole === 'host')) return false;   /* never auto-host */
+    const live = NET.ws && NET.ws.readyState === 1;
+    if (NET.role === 'client' && live && NET.built) return false;
+    NET.pend.clear();   /* only re-request state; never resend old dig / place intents */
+    NET.reconnectChip = { t0: nowMs(), why: why || 'lock' };
+    setStatus('Reconnecting...', '#e0c060');
+    if (NET.retry < 1) NET.retry = 1;
+    NET.retryT = 0.4;
+    if (NET.ws) {
+      NET.wantClose = true;
+      try { NET.ws.close(); } catch (err) {}
+      NET.ws = null; NET.wantClose = false;
+    }
+    if (NET.role === 'client' || NET.role === 'connecting') {
+      try { savePlayer(); } catch (err) {}
+      connect('join');
+      return true;
+    }
+    /* page came back after a hard suspend with role cleared: use lastJoin once */
+    const j = NET.loadLastJoin();
+    if (!j || Date.now() - j.at > 120000) return false;
+    NET.hostLeft = false; NET.retry = 1; NET.built = false;
+    if (j.k === 'on') {
+      NET.online = { code: j.code || '', rj: j.rj || '', rjName: j.n || '', hideIp: hideOn() };
+      connect('join');
+    } else {
+      NET.online = null; NET.addr = j.a; connect('join');
+    }
+    return true;
+  };
+  function phoneResume() {
+    try {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      NET.tryReconnect('vis');
+    } catch (err) { console.warn('reconnect', err); }
+  }
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') phoneResume(); });
+  window.addEventListener('pageshow', e => { if (e && e.persisted) phoneResume(); });
+  const _leave34 = NET.leave;
+  NET.leave = function () {
+    try { NET.clearLastJoin(); } catch (err) {}
+    NET.reconnectChip = null;
+    return _leave34.apply(this, arguments);
+  };
+
   setTimeout(autoStart, 50);
   window.addEventListener('beforeunload', () => { if (NET.role === 'client' || NET.role === 'offline') savePlayer(); });
 })();
